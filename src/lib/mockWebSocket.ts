@@ -1,0 +1,172 @@
+import { faker } from '@faker-js/faker';
+import type { NeuraBandData, DataLogFile } from '../types/neuraband';
+
+// This file simulates a WebSocket server for development purposes.
+// In a real application, this logic would live on your ESP32 or a backend server.
+
+class MockWebSocket extends EventTarget {
+  url: string;
+  readyState: number = 1; // OPEN
+
+  constructor(url: string) {
+    super();
+    this.url = url;
+    // Simulate connection opening
+    setTimeout(() => this.dispatchEvent(new Event('open')), 100);
+  }
+
+  send(data: string) {
+    // Simulate receiving a message from the client (e.g., settings update)
+    console.log('Mock WebSocket received:', data);
+    const message = JSON.parse(data);
+    if (message.type === 'UPDATE_SETTINGS') {
+        // In a real scenario, the device would apply these settings.
+        // Here we can just log it.
+        console.log('Simulating settings update:', message.payload);
+    }
+  }
+
+  close() {
+    this.readyState = 3; // CLOSED
+    this.dispatchEvent(new Event('close'));
+  }
+
+  // Method to simulate a message from the server
+  simulateMessage(data: any) {
+    const event = new MessageEvent('message', { data: JSON.stringify(data) });
+    this.dispatchEvent(event);
+  }
+}
+
+// --- Data Generation Logic (adapted from mockData.ts) ---
+
+const generateSparkline = () => Array.from({ length: 20 }, () => faker.number.int({ min: 60, max: 100 }));
+
+let ecgBase = 0;
+const generateEcgPoint = () => {
+    const noise = (Math.random() - 0.5) * 0.1;
+    const peak = Math.sin(ecgBase * 25) > 0.95 ? Math.random() * 2 + 1 : 0;
+    const wave = Math.sin(ecgBase * 2) * 0.5 + Math.sin(ecgBase) * 0.2;
+    ecgBase += 0.1;
+    return parseFloat((wave + peak + noise).toFixed(3));
+};
+
+let ppgBase = 0;
+const generatePpgPoint = () => {
+    const noise = (Math.random() - 0.5) * 0.05;
+    const wave = Math.sin(ppgBase) * Math.sin(ppgBase / 20);
+    ppgBase += 0.1;
+    return parseFloat((wave + noise).toFixed(3));
+};
+
+const generateImuPoint = () => ({
+    x: parseFloat((Math.sin(Date.now() / 1000) * 0.5 + (Math.random() - 0.5) * 0.2).toFixed(3)),
+    y: parseFloat((Math.cos(Date.now() / 1000) * 0.5 + (Math.random() - 0.5) * 0.2).toFixed(3)),
+    z: parseFloat((Math.sin(Date.now() / 1500) * 0.3 + (Math.random() - 0.5) * 0.1).toFixed(3)),
+});
+
+const generateLogFiles = (): DataLogFile[] => [
+    { id: '1', name: 'models', type: 'folder', size: '4.1 MB', modified: faker.date.recent().toLocaleDateString(), path: '/' },
+    { id: '2', name: 'data', type: 'folder', size: '128.3 MB', modified: faker.date.recent().toLocaleDateString(), path: '/' },
+    { id: '3', name: 'logs', type: 'folder', size: '2.5 MB', modified: faker.date.recent().toLocaleDateString(), path: '/' },
+    { id: '4', name: 'config.json', type: 'file', size: '1 KB', modified: faker.date.recent().toLocaleDateString(), path: '/' },
+    { id: '5', name: 'features_2025-07-21.csv', type: 'file', size: '12.7 MB', modified: '2025-07-21', path: '/data/' },
+];
+
+const generateFullMockData = (): NeuraBandData => {
+  const stressScore = faker.number.int({ min: 10, max: 90 });
+  const motionScore = faker.number.int({ min: 5, max: 95 });
+
+  return {
+    heartRate: {
+      value: faker.number.int({ min: 65, max: 85 }),
+      unit: 'BPM',
+      label: 'Heart Rate',
+      sparkline: generateSparkline(),
+    },
+    spo2: {
+      value: faker.number.int({ min: 96, max: 99 }),
+      unit: '%',
+      label: 'SpO2',
+      sparkline: Array.from({ length: 20 }, () => faker.number.int({ min: 95, max: 99 })),
+    },
+    stress: {
+      score: stressScore,
+      level: stressScore < 40 ? 'Low' : stressScore < 70 ? 'Moderate' : 'High',
+      label: 'Stress Level',
+    },
+    temperature: {
+        value: faker.number.float({ min: 36.5, max: 37.2, precision: 0.1 }),
+        unit: '°C',
+        label: 'Body Temperature',
+        sparkline: Array.from({ length: 20 }, () => faker.number.float({ min: 36.5, max: 37.2, precision: 0.1 })),
+    },
+    motion: {
+        score: motionScore,
+        level: motionScore < 30 ? 'Low' : motionScore < 75 ? 'Moderate' : 'High',
+        label: 'Motion Activity',
+    },
+    deviceStatus: [
+      { name: 'Battery', status: faker.helpers.arrayElement(['ok', 'ok', 'ok', 'warning']) },
+      { name: 'ECG', status: 'ok' },
+      { name: 'PPG', status: 'ok' },
+      { name: 'IMU', status: faker.helpers.arrayElement(['ok', 'warning']) },
+    ],
+    hrv: {
+        timestamps: Array.from({ length: 12 }, (_, i) => `${(i * 2).toString().padStart(2, '0')}:00`),
+        values: Array.from({ length: 12 }, () => faker.number.int({ min: 40, max: 70 })),
+    },
+    signals: {
+      ecg: Array.from({ length: 200 }, generateEcgPoint),
+      ppg: Array.from({ length: 200 }, generatePpgPoint),
+      imu: {
+          x: Array.from({ length: 200 }, () => generateImuPoint().x),
+          y: Array.from({ length: 200 }, () => generateImuPoint().y),
+          z: Array.from({ length: 200 }, () => generateImuPoint().z),
+      }
+    },
+    detailedStatus: [
+        { id: 'ecg', name: 'ECG Sensor (AD8232)', status: 'ok', sqi: 94, leadOff: 'Connected', details: 'Signal quality is excellent.' },
+        { id: 'ppg', name: 'PPG Sensor (MAX30102)', status: 'ok', sqi: 91, details: 'IR and RED channels are stable.' },
+        { id: 'imu', name: 'IMU (MPU6050)', status: 'warning', sqi: 78, details: 'Minor motion artifacts detected.' },
+        { id: 'gsr', name: 'GSR Sensor', status: 'ok', details: 'Tonic and phasic responses are normal.' },
+        { id: 'temp', name: 'Temperature (LM35)', status: 'ok', calibration: 'Calibrated on 2025-07-20', details: 'Stable body temperature.' },
+    ],
+    settings: {
+        samplingRates: { ecg: 250, ppg: 100, imu: 100, gsr: 25 },
+        model: 'neuraband_B_float16.tflite'
+    },
+    logs: generateLogFiles(),
+  };
+};
+
+
+// --- Mock Server Initialization ---
+let mockServerInterval: number | null = null;
+const originalWebSocket = window.WebSocket;
+
+export const initializeMockWebSocket = (url: string) => {
+  const mockSocketInstance = new MockWebSocket(url);
+
+  // Override the global WebSocket constructor
+  (window as any).WebSocket = function(wsUrl: string) {
+    if (wsUrl === url) {
+      return mockSocketInstance;
+    }
+    return new originalWebSocket(wsUrl);
+  };
+
+  // Start sending data every second
+  mockServerInterval = setInterval(() => {
+    mockSocketInstance.simulateMessage(generateFullMockData());
+  }, 1000);
+
+  // Return a cleanup function
+  return () => {
+    if (mockServerInterval) {
+      clearInterval(mockServerInterval);
+    }
+    // Restore original WebSocket
+    (window as any).WebSocket = originalWebSocket;
+  };
+};
